@@ -4,10 +4,10 @@ function main_experiment(parameter)
 subject= parameter.subject_code;
 
 %% Screen Configurations
-parameter.cross_size                                    = 100;
+parameter.cross_size                                    = 200;
 parameter.cross_color                                   = 220;
 parameter.screen_refresh_rate                           = 60;
-parameter.instruction_size                              = 25;
+parameter.instruction_size                              = 40;
 parameter.instruction_color                             = 220;
 parameter.screen_color                                  = 30;
 
@@ -101,7 +101,7 @@ PsychPortAudio('Verbosity', 10);
 %%% Familarization with the two meters
 fs = 48000;
 bpm = 110;
-totalDur = 10;
+totalDur = 60;
 toneDur = 0.05;
 fLow = 440;
 fHigh = 600;
@@ -132,7 +132,8 @@ i1 = ['Great!\n\n' ...
       'Afterwards, you will hear a sequence of unaccented tones.\n\n' ...
       'First, you will continue to tap using the grouping you heard before.\n\n'...
       'Then, you will either receive a cue to switch to the other grouping \n\n' ...
-      'or you will spontaneously switch from one to the other.\n\n\n'... 
+      'or you will spontaneously switch from one to the other.\n\n\n'...
+      'The frequency of the tones will not change within the sequence.\n\n\n' ...
       'Press any key to continue.'];
     
 print_instruction_new(my_window, rect,i1, instruction_size, instruction_color);
@@ -176,7 +177,7 @@ trials.SwitchTime(isCued) = switchtimes(randi(numel(switchtimes), nCued, 1));
 
 
 trialdur = 30;
-primedur = 5;
+primedur = 10;
 
 
 
@@ -194,7 +195,8 @@ for tt = 1:numtrials
     %create unaccented sequence
     f2 = create_sine(fs, bpm, trialdur, toneDur, fLow, fHigh, 'none');
 
-    i1 = ['Listen to the following sound and tap along.\n\n' ...
+    i1 = ['This is trial ' num2str(tt) ' of 20.\n\n' ...
+        'Listen to the following sound and tap along.\n\n' ...
         'Press any key to continue.'];
     
     print_instruction_new(my_window, rect,i1, instruction_size, instruction_color);
