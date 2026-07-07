@@ -7,7 +7,7 @@ subject= parameter.subject_code;
 parameter.cross_size                                    = 100;
 parameter.cross_color                                   = 220;
 parameter.screen_refresh_rate                           = 60;
-parameter.instruction_size                              = 15;
+parameter.instruction_size                              = 25;
 parameter.instruction_color                             = 220;
 parameter.screen_color                                  = 30;
 

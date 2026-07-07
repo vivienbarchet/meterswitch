@@ -9,7 +9,7 @@ tmp= inputdlg(prompt,dlg_title,num_lines);
 subject                     = tmp{1};
 parameter.subject_code      = tmp{1};
  
-parameter.debugging          =1;  % 1: debugging mode; should be 0 when participant is run1
+parameter.debugging          =0;  % 1: debugging mode; should be 0 when participant is run1
 
 rng('shuffle');
 
