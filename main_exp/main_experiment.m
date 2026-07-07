@@ -99,7 +99,7 @@ PsychPortAudio('Verbosity', 10);
 
 
 %%% Familarization with the two meters
-fs = 44100;
+fs = 48000;
 bpm = 110;
 totalDur = 10;
 toneDur = 0.05;

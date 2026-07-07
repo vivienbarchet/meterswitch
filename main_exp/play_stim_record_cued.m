@@ -32,10 +32,10 @@ PsychPortAudio('Verbosity', 10);
 
 tiempo_L=size(listen_sound,2)/Fs;
 
-pain = PsychPortAudio('Open', 5, 2, 3, Fs, 2); % devid, mode (3=fullduplex), reqlatency (3=full control, agressive), freq, channels [output, input]
-paout = PsychPortAudio('Open', 4, 1, 3, Fs, 2); % devid, mode (3=fullduplex), reqlatency (3=full control, agressive), freq, channels [output, input]
+pain = PsychPortAudio('Open', 1, 2, 3, Fs, 1); % devid, mode (3=fullduplex), reqlatency (3=full control, agressive), freq, channels [output, input]
+paout = PsychPortAudio('Open', 5, 1, 3, Fs, 2); % devid, mode (3=fullduplex), reqlatency (3=full control, agressive), freq, channels [output, input]
 
-PsychPortAudio('GetAudioData', pain, tiempo_L);
+PsychPortAudio('GetAudioData', pain,  tiempo_L+5);
 PsychPortAudio('FillBuffer', paout, listen_sound);
 paoutputstart = PsychPortAudio('Start', paout, 1, 0, 1);
 painputstart = PsychPortAudio('Start', pain, 1, 0, 1);
@@ -61,6 +61,9 @@ phase = "test";
 fileOut =([parameter.save_path '\' char(phase) '\trial' num2str(trialnum) '_' num2str(meter) '_' char(cond) '.wav']);
 audiowrite(fileOut, audiodata', Fs);
 
+fileOut =([parameter.save_path '\' char(phase) '\trial' num2str(trialnum) '_' num2str(meter) '_' char(cond) '_metronome.wav']);
+
+audiowrite(fileOut, listen_sound', Fs);
 
 end
 
