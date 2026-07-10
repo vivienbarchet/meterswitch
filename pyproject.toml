@@ -1,0 +1,18 @@
+[project]
+name = "meterswitch-analysis"
+version = "0.1.0"
+description = "Analysis pipeline for the meter-switching tapping experiment (Telluride 2026)"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=2.3",
+    "pandas>=2.3",
+    "scipy>=1.17",
+    "matplotlib>=3.10",
+    "librosa>=0.11",
+    "pymc>=5.28",
+    "pytensor>=2.38",
+    "arviz>=0.23",
+    "jupyter>=1.0",
+    "nbconvert>=7.17",
+    "ipykernel>=6.29",
+]
