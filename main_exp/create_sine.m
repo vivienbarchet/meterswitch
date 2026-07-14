@@ -17,7 +17,7 @@ nBeats = floor(totalDur / beatDur);
 beatSamples = round(beatDur * fs);
 
 if isnumeric(meter)
-    emphasized = 1:meter:60;
+    emphasized = 1:meter:200;
 else
     emphasized = [];
 end

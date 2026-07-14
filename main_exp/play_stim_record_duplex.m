@@ -1,4 +1,4 @@
-function [playbackstart, stopTime, resp_com, respt] = play_stim_record(subject,parameter, listen_sound, Fs, cond)
+function [playbackstart, stopTime, resp_com, respt] = play_stim_record(subject,parameter, listen_sound, Fs, cond, phase, trialnum)
 %% visual display
 screen_color        = parameter.screen_color;
 instruction_size    = parameter.instruction_size;

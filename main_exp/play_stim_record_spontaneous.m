@@ -31,17 +31,29 @@ PsychPortAudio('Verbosity', 10);
 
 tiempo_L=size(listen_sound,2)/Fs;
 
-pain = PsychPortAudio('Open', 1, 2, 3, Fs, 1); % devid, mode (3=fullduplex), reqlatency (3=full control, agressive), freq, channels [output, input]
-paout = PsychPortAudio('Open', 5, 1, 3, Fs, 2); % devid, mode (3=fullduplex), reqlatency (3=full control, agressive), freq, channels [output, input]
+%pain = PsychPortAudio('Open', 1, 2, 3, Fs, 1); % devid, mode (3=fullduplex), reqlatency (3=full control, agressive), freq, channels [output, input]
+%paout = PsychPortAudio('Open', 5, 1, 3, Fs, 2); % devid, mode (3=fullduplex), reqlatency (3=full control, agressive), freq, channels [output, input]
+pain = PsychPortAudio('Open', 9, 2, 3, Fs, 2); % devid, mode (3=fullduplex), reqlatency (3=full control, agressive), freq, channels [output, input]
+paout = PsychPortAudio('Open', 7, 1, 3, Fs, 2); % devid, mode (3=fullduplex), reqlatency (3=full control, agressive), freq, channels [output, input]
 
-PsychPortAudio('GetAudioData', pain,  tiempo_L+5);
+PsychPortAudio('GetAudioData', pain, tiempo_L+5);
 PsychPortAudio('FillBuffer', paout, listen_sound);
-paoutputstart = PsychPortAudio('Start', paout, 1, 0, 1);
-painputstart = PsychPortAudio('Start', pain, 1, 0, 1);
+playbackstart = PsychPortAudio('Start', paout, 1, 0, 1);
+PsychPortAudio('Start', pain, 1, 0, 1);
 
-% Start audio capture
+playbackEnd = playbackstart + tiempo_L-0.01;
 
-WaitSecs(tiempo_L-0.01);
+
+
+while GetSecs < playbackEnd
+
+    if IsWin
+        GetMouse; 
+    end
+    WaitSecs(0.05); 
+end
+
+%WaitSecs(tiempo_L-0.01);
 
 [audiodata, offset, overrun] = PsychPortAudio('GetAudioData', pain);
 PsychPortAudio('Stop', pain, 1);

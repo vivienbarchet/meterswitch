@@ -14,7 +14,7 @@ tiempo_L                = size(listen_sound,1)/Fs; %tiempo_L=2;
 
 KbReleaseWait;
 
-
+HideCursor;
 
 
 %% set fixation cross
@@ -27,25 +27,39 @@ WaitSecs(0.5 + 0.25*rand)
 % Parform low-level initialization of the sound driver:
 InitializePsychSound(1);
 % Provide some debug output:
-PsychPortAudio('Verbosity', 10);
+PsychPortAudio('Verbosity', 0);
 
 tiempo_L=size(listen_sound,2)/Fs;
 
-pain = PsychPortAudio('Open', 1, 2, 3, Fs, 1); % devid, mode (3=fullduplex), reqlatency (3=full control, agressive), freq, channels [output, input]
-paout = PsychPortAudio('Open', 5, 1, 3, Fs, 2); % devid, mode (3=fullduplex), reqlatency (3=full control, agressive), freq, channels [output, input]
+%pain = PsychPortAudio('Open', 12, 2, 3, Fs, 1); % devid, mode (3=fullduplex), reqlatency (3=full control, agressive), freq, channels [output, input]
+%paout = PsychPortAudio('Open', 5, 1, 3, Fs, 2); % devid, mode (3=fullduplex), reqlatency (3=full control, agressive), freq, channels [output, input]
+
+pain = PsychPortAudio('Open', 9, 2, 3, Fs, 2); % devid, mode (3=fullduplex), reqlatency (3=full control, agressive), freq, channels [output, input]
+paout = PsychPortAudio('Open', 7, 1, 3, Fs, 2); % devid, mode (3=fullduplex), reqlatency (3=full control, agressive), freq, channels [output, input]
 
 PsychPortAudio('GetAudioData', pain, tiempo_L+5);
 PsychPortAudio('FillBuffer', paout, listen_sound);
-paoutputstart = PsychPortAudio('Start', paout, 1, 0, 1);
+playbackstart = PsychPortAudio('Start', paout, 1, 0, 1);
 painputstart = PsychPortAudio('Start', pain, 1, 0, 1);
 
-% Start audio capture
+playbackEnd = playbackstart + tiempo_L-0.01;
 
-WaitSecs(tiempo_L-0.01);
+%WaitSecs(tiempo_L-0.01);
 
-[audiodata, offset, overrun] = PsychPortAudio('GetAudioData', pain);
+
+
+
+while GetSecs < playbackEnd
+
+    if IsWin
+        GetMouse; 
+    end
+    WaitSecs(0.05); 
+end
+
 PsychPortAudio('Stop', pain, 1);
 PsychPortAudio('Stop', paout, 1);
+[audiodata, offset, overrun] = PsychPortAudio('GetAudioData', pain);
 
 PsychPortAudio('Close');
 fileOut =([parameter.save_path  '\' phase '\trial' num2str(trialnum) '_' num2str(cond) '.wav']);

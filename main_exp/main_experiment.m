@@ -239,6 +239,28 @@ for tt = 1:numtrials
     results.TrialNumber(tt) = tt;
 
 
+    switchq = ['Did you switch the meter during the trial?\n\n' ...
+        'Press 1 for yes and 2 for no.'];
+
+    Screen('TextSize', my_window, instruction_size);
+    DrawFormattedText(my_window,switchq, 'center', 'center', [instruction_color instruction_color instruction_color]);
+    Screen(my_window, 'Flip');
+
+    yes = KbName('1!');
+    no = KbName('2@');
+
+    RestrictKeysForKbCheck([50,49]);
+    key = 0;
+    while ~key
+        [key, keyTime, keyCode] = KbCheck;
+        WaitSecs(0.05);
+    end
+    
+    resp_com = keyCode(yes);
+
+    results.switch(tt)     = resp_com;
+
+    RestrictKeysForKbCheck([]);
 end
 
 % Save CSV
