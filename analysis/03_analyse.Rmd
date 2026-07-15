@@ -38,7 +38,7 @@ theme_update(text = element_text(size = 11),
 ```
 
 ```{r load-data}
-alignment_files <- list.files('/Users/robaru/repos/meterswitch/save/derived',
+alignment_files <- list.files('../save/derived',
                                pattern = '_click_tap_alignment\\.csv$',
                                recursive = TRUE, full.names = TRUE)
 metro <- rbindlist(lapply(alignment_files, function(f) as.data.table(read.csv(f))))
@@ -49,7 +49,7 @@ metro[, missed_beat := as.logical(missed_beat)]
 metro[, low_confidence_trial := as.logical(low_confidence_trial)]
 
 # sub01's recording was too quiet/noisy to trust (see project notes) -- excluded
-metro <- metro[subject != 'sub01']
+metro <- metro[subject == 'sub04']
 
 # convert the experimenter's cue time (seconds) to a beat count, using each
 # trial's own tempo, so trials at different speeds can be compared on the
@@ -57,19 +57,19 @@ metro <- metro[subject != 'sub01']
 metro[, switch_beat := switch_time * bpm / 60]
 metro[, click_rel := click_idx - switch_beat]
 
-model_fits <- as.data.table(read.csv('/Users/robaru/repos/meterswitch/save/derived/sub02/sub02_spontaneous_tau_fit.csv'))
+model_fits <- as.data.table(read.csv('/Users/robaru/repos/meterswitch/save/derived/sub04/sub04_spontaneous_tau_fit.csv'))
 model_fits <- model_fits[, .(trial, tau = tau_mean, tau_ci_width)]
 
-cued_fits <- as.data.table(read.csv('/Users/robaru/repos/meterswitch/save/derived/sub02/sub02_cued_tau_fit.csv'))
+cued_fits <- as.data.table(read.csv('/Users/robaru/repos/meterswitch/save/derived/sub04/sub04_cued_tau_fit.csv'))
 cued_fits[, converged := as.logical(converged)]  # pandas writes "True"/"False" strings, not logical
 
 # group-level parameter comparisons (cued vs spontaneous, meter 2 vs 3),
 # computed in 02_fit_model.ipynb via a paired Monte Carlo resample of
 # posterior draws across trials -- see Part 4 below
-group_comparisons <- as.data.table(read.csv('/Users/robaru/repos/meterswitch/save/derived/sub02/sub02_group_comparisons.csv'))
+group_comparisons <- as.data.table(read.csv('../save/derived/sub02/sub04_group_comparisons.csv'))
 group_comparisons[, credible := as.logical(credible)]
 
-posterior_draws <- as.data.table(read.csv('/Users/robaru/repos/meterswitch/save/derived/sub02/sub02_posterior_draws.csv'))
+posterior_draws <- as.data.table(read.csv('/Users/robaru/repos/meterswitch/save/derived/sub04/sub04_posterior_draws.csv'))
 posterior_draws[, converged := as.logical(converged)]
 
 # how many trials/participants we'd need to detect various effects, computed
