@@ -27,7 +27,7 @@ print("PyMC", pm.__version__, "| ArviZ", az.__version__)
 # ## 0. Config
 
 # %%
-SUBJECT = "sub07"
+SUBJECT = "sub08"
 ALIGNMENT_CSV = f"../save/derived/{SUBJECT}/{SUBJECT}_click_tap_alignment.csv"
 OUT_DIR = f"../save/derived/{SUBJECT}"
 
