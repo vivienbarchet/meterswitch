@@ -21,14 +21,17 @@ signal; if a switch happens, it's the participant's own doing). We recorded ever
 loudness and want to know: how does tapping behaviour change around a switch, and can we estimate
 *when* a switch happened even when nobody told the participant to switch?
 
-Currently based on one participant (**sub02**) with clean, low-noise recordings; a second
-participant's data was excluded (recording was too quiet/noisy to trust).
+Based on 6 participants (sub02, sub04-08) with usable recordings; `sub01` was excluded (too
+quiet/noisy to trust) and `sub03` never had a trial log, so extraction couldn't run for it. Every
+trial is still fit completely independently, exactly as in the original single-subject version --
+what's new is pooling those independent per-trial results across participants for the group
+comparisons in Part 4, not a hierarchical/shared-parameter model (deliberately kept simple).
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
-                      fig.width = 6, fig.height = 4, fig.align = "center")
+                      fig.width = 4.5, fig.height = 3, fig.align = "center")
 
-packages <- c("ggplot2", "data.table", "gridExtra")
+packages <- c("ggplot2", "data.table", "gridExtra", "scales", "ggdist")
 sapply(packages, require, character.only = TRUE)
 
 theme_set(theme_classic(base_size = 11))
@@ -38,7 +41,7 @@ theme_update(text = element_text(size = 11),
 ```
 
 ```{r load-data}
-alignment_files <- list.files('../save/derived',
+alignment_files <- list.files('/Users/robaru/repos/meterswitch/save/derived',
                                pattern = '_click_tap_alignment\\.csv$',
                                recursive = TRUE, full.names = TRUE)
 metro <- rbindlist(lapply(alignment_files, function(f) as.data.table(read.csv(f))))
@@ -49,7 +52,7 @@ metro[, missed_beat := as.logical(missed_beat)]
 metro[, low_confidence_trial := as.logical(low_confidence_trial)]
 
 # sub01's recording was too quiet/noisy to trust (see project notes) -- excluded
-metro <- metro[subject == 'sub06']
+metro <- metro[subject != 'sub01']
 
 # convert the experimenter's cue time (seconds) to a beat count, using each
 # trial's own tempo, so trials at different speeds can be compared on the
@@ -57,24 +60,29 @@ metro <- metro[subject == 'sub06']
 metro[, switch_beat := switch_time * bpm / 60]
 metro[, click_rel := click_idx - switch_beat]
 
-model_fits <- as.data.table(read.csv('../save/derived/sub06/sub06_spontaneous_tau_fit.csv'))
-model_fits <- model_fits[, .(trial, tau = tau_mean, tau_ci_width)]
+POOLED_DIR <- '/Users/robaru/repos/meterswitch/save/derived/pooled'
 
-cued_fits <- as.data.table(read.csv('../save/derived/sub06/sub06_cued_tau_fit.csv'))
+model_fits <- as.data.table(read.csv(file.path(POOLED_DIR, 'all_subjects_spontaneous_tau_fit.csv')))
+model_fits <- model_fits[, .(subject, trial, tau = tau_mean, tau_ci_width)]
+
+cued_fits <- as.data.table(read.csv(file.path(POOLED_DIR, 'all_subjects_cued_tau_fit.csv')))
 cued_fits[, converged := as.logical(converged)]  # pandas writes "True"/"False" strings, not logical
 
 # group-level parameter comparisons (cued vs spontaneous, meter 2 vs 3),
 # computed in 02_fit_model.ipynb via a paired Monte Carlo resample of
-# posterior draws across trials -- see Part 4 below
-group_comparisons <- as.data.table(read.csv('../save/derived/sub06/sub06_group_comparisons.csv'))
+# posterior draws across trials, pooled across every subject -- see Part 4 below
+group_comparisons <- as.data.table(read.csv(file.path(POOLED_DIR, 'all_subjects_group_comparisons.csv')))
 group_comparisons[, credible := as.logical(credible)]
 
-posterior_draws <- as.data.table(read.csv('../save/derived/sub06/sub06_posterior_draws.csv'))
+posterior_draws <- as.data.table(read.csv(file.path(POOLED_DIR, 'all_subjects_posterior_draws.csv')))
 posterior_draws[, converged := as.logical(converged)]
 
-# how many trials/participants we'd need to detect various effects, computed
-# by Monte Carlo simulation in power_analysis.ipynb -- see Part 5 below
-power_trials <- as.data.table(read.csv('results/power_required_trials.csv'))
+SUBJECT_COLORS <- setNames(scales::hue_pal()(uniqueN(metro$subject)), sort(unique(metro$subject)))
+CI_WIDTH_THRESHOLD <- 15  # beats; below this, treat tau as well-identified (both cued and spontaneous)
+
+# how many participants we'd need to detect a musical-training effect, from
+# power_analysis.ipynb's Monte Carlo simulation -- referenced in the musical
+# training section below (power analysis itself dropped from this report)
 power_participants <- as.data.table(read.csv('results/power_required_participants.csv'))
 ```
 
@@ -83,9 +91,10 @@ power_participants <- as.data.table(read.csv('results/power_required_participant
 Before any pooling or modelling, here's a single cued trial in full: every tap's timing (top) and
 loudness (bottom), with the red line marking exactly when the participant was cued to switch meter.
 
-```{r cold-open, fig.height=5}
-COLD_OPEN_TRIAL <- 1
-one_trial <- metro[condition == 'cued' & trial == COLD_OPEN_TRIAL]
+```{r cold-open, fig.height=3.8}
+COLD_OPEN_SUBJECT <- 'sub02'
+COLD_OPEN_TRIAL <- 15
+one_trial <- metro[condition == 'cued' & trial == COLD_OPEN_TRIAL & subject == COLD_OPEN_SUBJECT]
 one_switch_beat <- one_trial$switch_beat[1]
 
 p_timing <- ggplot(one_trial[missed_beat == FALSE], aes(x = click_idx, y = asynchrony_s)) +
@@ -93,7 +102,7 @@ p_timing <- ggplot(one_trial[missed_beat == FALSE], aes(x = click_idx, y = async
   geom_point(color = "#4C72B0", size = 1) +
   geom_vline(xintercept = one_switch_beat, color = "firebrick") +
   labs(x = NULL, y = "asynchrony (s)",
-       title = paste0("Trial ", COLD_OPEN_TRIAL, ": timing"),
+       title = paste0(COLD_OPEN_SUBJECT, ", trial ", COLD_OPEN_TRIAL, ": timing"),
        subtitle = "Red line = when the switch was cued")
 
 p_loud <- ggplot(one_trial[missed_beat == FALSE], aes(x = click_idx, y = rms_db)) +
@@ -101,7 +110,7 @@ p_loud <- ggplot(one_trial[missed_beat == FALSE], aes(x = click_idx, y = rms_db)
   geom_point(color = "#55A868", size = 1) +
   geom_vline(xintercept = one_switch_beat, color = "firebrick") +
   labs(x = "beat number in the trial", y = "tap loudness (dB)",
-       title = paste0("Trial ", COLD_OPEN_TRIAL, ": loudness"))
+       title = paste0(COLD_OPEN_SUBJECT, ", trial ", COLD_OPEN_TRIAL, ": loudness"))
 
 gridExtra::grid.arrange(p_timing, p_loud, ncol = 1)
 ```
@@ -115,17 +124,30 @@ alternation is gone.
 ## Is this trial typical?
 
 ```{r descriptives-table}
-desc <- metro[, .(n_trials = length(unique(trial))), by = .(condition, meter)]
-setorder(desc, condition, meter)
-knitr::kable(desc, col.names = c("Condition", "Meter", "N trials"))
+desc <- metro[, .(n_trials = uniqueN(trial)), by = .(subject, condition)]
+desc_wide <- dcast(desc, subject ~ condition, value.var = "n_trials", fill = 0)
+knitr::kable(desc_wide, col.names = c("Subject", "Cued", "Spontaneous"))
 ```
 
-20 trials total: 10 **cued** (an instruction tells the participant when to switch) and 10
-**spontaneous** (no instruction), evenly split between the two meters tested (2 and 3 beats per
+`r uniqueN(metro$subject)` participants, `r uniqueN(metro[, .(subject, trial)])` trials total,
+split evenly between cued (an instruction tells the participant when to switch) and spontaneous
+(no instruction) within each participant, and between the two meters tested (2 and 3 beats per
 bar). Tempo ranged `r round(min(metro$bpm))`-`r round(max(metro$bpm))` BPM across trials. Pooled
-across every trial, timing stays centred on zero with no obvious switch-related structure,
-confirming the single trial above wasn't a fluke -- **timing alone doesn't show a reliable switch
-signal.**
+across every trial, timing shows no obvious *switch-related* structure, confirming the single
+trial above wasn't a fluke -- **timing alone doesn't show a reliable switch signal.**
+
+```{r async-summary}
+async_summary <- metro[missed_beat == FALSE, .(
+  mean_asynchrony_ms = round(mean(asynchrony_s) * 1000, 1),
+  sd_ms = round(sd(asynchrony_s) * 1000, 1)
+), by = subject]
+knitr::kable(async_summary, col.names = c("Subject", "Mean asynchrony (ms)", "SD (ms)"))
+```
+
+It isn't exactly zero, though: every participant taps slightly *before* the click on average
+(all negative, roughly -25 to -70 ms) -- a well-known anticipation effect in tapping tasks
+(negative mean asynchrony), not something specific to this experiment. It doesn't change the
+switch-detection story above since it's a constant offset, not a switch-related pattern.
 
 ```{r accent-overview}
 amp <- metro[missed_beat == FALSE]
@@ -174,7 +196,7 @@ where the switch is instantaneous) shows real switches are close to instantaneou
 changes over roughly a beat, not gradually across many beats. Either way, the model only uses the
 loudness/accent information described in Part 1 -- not raw timing -- to find the change point.
 
-```{r model-schematic, fig.width=8, fig.height=5}
+```{r model-schematic, fig.width=6, fig.height=3.8}
 # Illustrative only -- a smooth, textbook-shaped example, not a fit to any
 # real trial -- just to make "switch, weighted blend" concrete. Width is set
 # small/sharp here to match what fitting to real data actually shows (see
@@ -223,35 +245,40 @@ and `02_fit_model.ipynb` for the full specification.
 cued trials, where we know when the *instruction* to switch was given. `tau` isn't meant to match
 that instruction time exactly -- it's fit purely from tap loudness, so it measures when the
 participant's *tapping itself* actually changed, which should come a little after the instruction
-(reaction time, plus a moment to settle into the new pattern). That's exactly what we see below:
-across 9 of the 10 cued trials (one trial's fit didn't converge reliably and is excluded -- flagged
-in the table), `tau` tracks the instruction time closely with a consistent positive lag, never
-negative.
+(reaction time, plus a moment to settle into the new pattern). Some cued trials have a genuinely
+wide, sometimes multi-modal `tau` posterior -- checked directly (not a sampler bug: R-hat is fine,
+chains agree with each other on the same wide, lumpy distribution), this happens specifically when
+a trial's accent contrast is weak, the same failure mode already seen for the spontaneous side. We
+apply the exact same fix here: flag trials with a wide 94% credible interval as "unclear" rather
+than trusting a point estimate the model itself is unsure about. Restricted to the confident
+trials, correlation with instruction time is 0.72 (vs. 0.45 unfiltered) and lag is far less noisy
+(-1.7 to +22.3 beats, vs. -12.8 to +22.3 unfiltered).
 
 ```{r cued-validation-table}
 cued_fits[, lag_beats := tau_mean - switch_beat]
-tbl_cued <- cued_fits[order(trial), .(trial, meter,
-                                       "instruction time (beats)" = round(switch_beat, 1),
-                                       "model's tau (beats)" = round(tau_mean, 1),
-                                       "lag (tau - instruction)" = round(lag_beats, 1),
-                                       "converged?" = ifelse(converged, "yes", "NO -- excluded below"))]
-knitr::kable(tbl_cued)
+cued_fits[, tau_ci_width := tau_hi - tau_lo]
+cued_fits[, confident := (tau_ci_width < CI_WIDTH_THRESHOLD) & converged]
+tbl_cued_subj <- cued_fits[, .(n_trials = .N, n_confident = sum(confident),
+                                mean_lag_beats = round(mean(lag_beats[confident]), 2)),
+                            by = subject]
+knitr::kable(tbl_cued_subj, col.names = c("Subject", "N trials", "N confident", "Mean lag (beats)"))
 ```
 
-```{r cued-validation-plot, fig.width=6, fig.height=5}
-cued_ok <- cued_fits[converged == TRUE]
+```{r cued-validation-plot, fig.width=5, fig.height=3.5}
+cued_ok <- cued_fits[confident == TRUE]
 r <- round(cor(cued_ok$tau_mean, cued_ok$switch_beat), 2)
 lag_mean <- round(mean(cued_ok$lag_beats), 2)
 
-ggplot(cued_fits, aes(x = switch_beat, y = tau_mean, color = converged)) +
+ggplot(cued_fits, aes(x = switch_beat, y = tau_mean, color = subject, shape = confident)) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50") +
-  geom_errorbar(aes(ymin = tau_lo, ymax = tau_hi), width = 0.5, alpha = 0.6) +
+  geom_errorbar(aes(ymin = tau_lo, ymax = tau_hi), width = 0.5, alpha = 0.4) +
   geom_point(size = 2.5) +
-  scale_color_manual(values = c("TRUE" = "#4C72B0", "FALSE" = "firebrick"),
-                      labels = c("TRUE" = "converged", "FALSE" = "not converged (excluded)")) +
-  labs(x = "instruction time (beats)", y = "model's tau (beats)", color = NULL,
+  scale_color_manual(values = SUBJECT_COLORS) +
+  scale_shape_manual(values = c("TRUE" = 16, "FALSE" = 4),
+                      labels = c("TRUE" = "confident", "FALSE" = "unclear (wide CI, excluded)")) +
+  labs(x = "instruction time (beats)", y = "model's tau (beats)", color = "subject", shape = NULL,
        title = "Model's tau vs. the actual cue time, per cued trial",
-       subtitle = paste0("Converged trials: correlation = ", r, ", mean lag = ", lag_mean, " beats\n",
+       subtitle = paste0("Confident trials: correlation = ", r, ", mean lag = ", lag_mean, " beats\n",
                           "Dashed line = perfect agreement (tau == instruction time)"))
 ```
 
@@ -263,19 +290,17 @@ can ask *when the model thinks the participant changed*, and *how sure it is* (f
 `tau`'s credible interval).
 
 ```{r spont-confidence-table}
-CI_WIDTH_THRESHOLD <- 15  # beats; below this, treat tau as well-identified
 model_fits[, confident_switch := tau_ci_width < CI_WIDTH_THRESHOLD]
-tbl <- model_fits[, .(trial, "estimated switch (beat)" = round(tau, 1),
-                       "94% CI width (beats)" = round(tau_ci_width, 1),
-                       "model confidence" = ifelse(confident_switch, "confident switch", "unclear / no switch"))]
-knitr::kable(tbl)
+tbl <- model_fits[, .(n_trials = .N, n_confident = sum(confident_switch)), by = subject]
+knitr::kable(tbl, col.names = c("Subject", "N spontaneous trials", "N confident switches"))
 ```
 
-`r sum(model_fits$confident_switch)` of the 10 spontaneous trials show a confident, well-identified
-switch; the rest are ambiguous (a wide `tau` credible interval means the data don't clearly pin down
-when -- or whether -- the participant's tapping pattern actually changed). We only use the confident
-trials below -- mixing in the ambiguous ones would add noise from switch estimates the model itself
-is unsure about.
+`r sum(model_fits$confident_switch)` of `r nrow(model_fits)` spontaneous trials show a confident,
+well-identified switch overall, but that varies a lot by participant (from 2/10 to 10/10) -- some
+people's spontaneous switches are just harder to pin down than others'. The rest are ambiguous
+(a wide `tau` credible interval means the data don't clearly pin down when -- or whether -- the
+participant's tapping pattern actually changed). We only use the confident trials below -- mixing
+in the ambiguous ones would add noise from switch estimates the model itself is unsure about.
 
 ## A model-free check: does the accent pattern itself show a switch?
 
@@ -304,61 +329,76 @@ rolling_accent_contrast <- function(dt, window_beats = 8) {
 spont_amp_trials <- metro[condition == 'spontaneous' & missed_beat == FALSE]
 spont_amp_trials[, bar_position := click_idx %% meter]
 
-contrast_by_trial <- rbindlist(lapply(unique(spont_amp_trials$trial), function(tr) {
-  out <- rolling_accent_contrast(spont_amp_trials[trial == tr])
-  out[, trial := tr]
+subj_trials <- unique(spont_amp_trials[, .(subject, trial)])
+contrast_by_trial <- rbindlist(lapply(seq_len(nrow(subj_trials)), function(i) {
+  s <- subj_trials$subject[i]; tr <- subj_trials$trial[i]
+  out <- rolling_accent_contrast(spont_amp_trials[subject == s & trial == tr])
+  out[, `:=`(subject = s, trial = tr)]
   out
 }))
 
-contrast_by_trial <- merge(contrast_by_trial, model_fits[, .(trial, tau, confident_switch)], by = 'trial')
+contrast_by_trial <- merge(contrast_by_trial, model_fits[, .(subject, trial, tau, confident_switch)],
+                            by = c('subject', 'trial'))
+contrast_by_trial[, beat_rel := click_idx - tau]
+
+# aggregate across trials (mean +/- SE), aligned on the model's own switch
+# estimate, instead of one panel per trial -- doesn't scale to 44 confident
+# trials across 6 participants
+contrast_agg <- contrast_by_trial[confident_switch == TRUE & beat_rel > -15 & beat_rel < 15,
+  .(mean_contrast = mean(contrast_db, na.rm = TRUE),
+    se = sd(contrast_db, na.rm = TRUE) / sqrt(.N)),
+  by = round(beat_rel)]
+setnames(contrast_agg, "round", "beat_rel")
 ```
 
-```{r model-free-contrast-plot, fig.height=6}
-ggplot(contrast_by_trial) +
-  geom_line(aes(x = click_idx, y = contrast_db), color = "#8172B2") +
-  geom_vline(aes(xintercept = tau), color = "firebrick", linetype = "dashed") +
-  facet_grid(trial ~ ., scales = "free_y") +
-  labs(x = "beat number in the trial", y = "accent contrast (dB)",
-       title = "Model-free accent contrast over each trial",
-       subtitle = "Dashed line = model's estimated switch beat, for comparison")
+```{r model-free-contrast-plot}
+ggplot(contrast_agg, aes(x = beat_rel, y = mean_contrast)) +
+  geom_ribbon(aes(ymin = mean_contrast - se, ymax = mean_contrast + se), alpha = 0.2, fill = "#8172B2") +
+  geom_line(color = "#8172B2") +
+  geom_vline(xintercept = 0, color = "firebrick", linetype = "dashed") +
+  labs(x = "beats relative to the model's estimated switch (tau)", y = "accent contrast (dB)",
+       title = "Model-free accent contrast, aligned on the model's switch estimate",
+       subtitle = paste0("Mean +/- SE across the ", sum(model_fits$confident_switch),
+                          " confident-switch trials"))
 ```
 
-Where the model reports a confident switch, the accent contrast typically starts high and shows a
-clear, sustained drop close to the model's estimated `tau` -- a useful independent check that the
-model isn't just fitting noise. Note that individual taps still look "zig-zaggy" by eye even after a
-real collapse (beat-to-beat noise is large relative to the shrunk accent), so a raw per-tap plot
-alone can look similar before and after a switch -- the rolling contrast statistic is what actually
-reveals the change, by averaging out that noise.
-
-Where the model was unsure, there are two different reasons, visible directly in this plot:
-trials where the contrast **never gets very high to begin with** (e.g. trial 13, which starts under
-2 dB) have no strong initial accent to switch away from, so there's nothing for the model to detect
-a collapse in; trials where the contrast drops only partway and not all the way to zero (e.g. trial
-18) show a weaker, less complete change. Both are genuine features of the data, not a shortcoming of
-the fitting procedure -- they're exactly why the model correctly reports low confidence there rather
-than forcing a precise answer.
+Aligned this way, the accent contrast is high before `tau` and drops sharply right around it --
+a useful independent check that the model isn't just fitting noise, using no model output except
+`tau` itself as an alignment point. Individual taps still look "zig-zaggy" by eye even after a real
+collapse (beat-to-beat noise is large relative to the shrunk accent), so a raw per-tap plot alone
+can look similar before and after a switch -- this rolling, aligned-and-averaged statistic is what
+actually reveals the change. Where the model was unsure (the other 16 trials), it's for one of two
+reasons: the contrast never gets very high to begin with (nothing to switch away from), or it drops
+only partway rather than to zero (a weaker, less complete change) -- both genuine data features, not
+a shortcoming of the fitting procedure.
 
 ## Aligning spontaneous trials on the model's estimated switch
 
-```{r spont-aligned-plot, fig.height=5}
+```{r spont-aligned-plot, fig.height=3}
 spont_fitted <- metro[condition == 'spontaneous']
-spont_fitted <- merge(spont_fitted, model_fits[, .(trial, tau, confident_switch)], by = 'trial')
+spont_fitted <- merge(spont_fitted, model_fits[, .(subject, trial, tau, confident_switch)],
+                       by = c('subject', 'trial'))
 spont_fitted[, click_rel := click_idx - tau]
 
-spont_confident <- spont_fitted[confident_switch == TRUE]
+spont_agg <- spont_fitted[confident_switch == TRUE & click_rel > -15 & click_rel < 15,
+  .(mean_async = mean(asynchrony_s, na.rm = TRUE),
+    se = sd(asynchrony_s, na.rm = TRUE) / sqrt(.N)),
+  by = round(click_rel)]
+setnames(spont_agg, "round", "click_rel")
 
-ggplot(spont_confident) +
-  geom_line(aes(x = click_rel, y = asynchrony_s), color = "#55A868") +
+ggplot(spont_agg, aes(x = click_rel, y = mean_async)) +
+  geom_ribbon(aes(ymin = mean_async - se, ymax = mean_async + se), alpha = 0.2, fill = "#55A868") +
+  geom_line(color = "#55A868") +
   geom_vline(xintercept = 0, color = "firebrick") +
-  facet_grid(trial ~ .) +
   labs(x = "beats relative to the model's estimated switch point", y = "asynchrony (s)",
        title = "Confident spontaneous switches, aligned",
-       subtitle = "Red line = model's estimated switch beat, per trial")
+       subtitle = paste0("Mean +/- SE across the ", sum(model_fits$confident_switch), " confident-switch trials"))
 ```
 
 The main takeaway here is methodological: the model can pick out *which* spontaneous trials had a
 clear switch and roughly *when*, purely from the loudness/accent pattern, without ever being told a
-switch happened.
+switch happened. Timing itself still doesn't show a strong signature at the switch, consistent with
+Part 1 -- this alignment uses `tau`, it doesn't discover it.
 
 ## A closer look: a small timing bump right after the switch
 
@@ -399,11 +439,11 @@ ggplot(by_rel_bump, aes(x = click_rel, y = mean_stat)) +
        subtitle = "Narrow window (cued trials); shaded band = standard error across trials")
 ```
 
-This is a small effect on one participant's data, so it isn't something to draw conclusions from
-yet -- but it's worth keeping an eye on once more participants are added: if it holds up, it would
-suggest a brief timing wobble a beat or two after the switch itself (distinct from the broader
-pre-vs-post trend), which could be a genuine signature of the participant re-locking onto the new
-meter right after adopting its accent.
+Now pooled across all 6 participants, the pattern is a modest dip in timing error a few beats
+*after* the switch (not right at it) before returning to baseline -- present, but small relative
+to its own uncertainty band, so still worth treating as suggestive rather than a settled finding.
+If it holds up with more data, it would point to a brief timing wobble as the participant re-locks
+onto the new meter shortly after adopting its accent, distinct from the broader pre-vs-post trend.
 
 # Part 4: Comparing conditions and meters
 
@@ -411,11 +451,13 @@ Beyond `tau` itself, the model fits three other parameters per trial: `s` (how s
 is), `sigma_sw` (extra noise right at the switch), and `sigma_0` (baseline loudness noise,
 unrelated to the switch). Do any of these differ between cued and spontaneous trials, or between
 meter 2 and meter 3? Comparing posterior *means* alone can be misleading -- it ignores how
-uncertain each trial's own estimate is. Instead, `02_fit_model.ipynb` computes a proper 94%
-credible interval on each group difference (by resampling posterior draws across trials within
-each group many times, building up a distribution of "the group's mean" that respects each
-trial's own uncertainty, then differencing). A difference only counts as credible if that interval
-excludes zero.
+uncertain each trial's own estimate is. `02_fit_model.ipynb` computes a 94% credible interval on
+each group difference by resampling posterior draws across trials many times; with data from
+multiple subjects, that resampling has to respect that **subjects, not trials, are the
+independent unit** -- 6 participants contributed 10-20 trials each, and trials from the same
+person are correlated, so treating every trial as an independent vote overstates precision. The
+method resamples within each subject first, then averages across subjects, not across trials
+directly. A difference only counts as credible if that interval excludes zero.
 
 ```{r group-comparison-table}
 tbl_group <- copy(group_comparisons)
@@ -436,105 +478,161 @@ tbl_display <- tbl_group[, .(
 knitr::kable(tbl_display)
 ```
 
-Two things stand out. `tau` differs credibly between cued and spontaneous -- but that's not a new
-result, it's the same reaction-lag effect already reported in Part 2 (cued trials' `tau` sits
-`switch_beat` + ~2.3 beats later; spontaneous trials have no `switch_beat` to add that to). `s` and
-`sigma_sw` show no credible difference anywhere: switches are equally sharp and equally noisy at
-the switch, regardless of condition or meter, as far as this data can tell.
+`tau` differs credibly between cued and spontaneous -- not a new result, it's the same reaction-lag
+effect already reported in Part 2. `s` and `sigma_sw` show no credible difference anywhere:
+switches are equally sharp and equally noisy at the switch, regardless of condition or meter, as
+far as this data can tell. `sigma_0` differs credibly between cued and spontaneous, but **not**
+between meters once subjects (not trials) are treated as the unit of replication -- see below, this
+one looked credible under a naive analysis and doesn't survive a proper one. The one finding that
+*is* credible by meter is `tau` itself. In the plot below: half-violin = distribution of per-trial
+means across all participants; coloured points = individual trials, jittered, by participant; black
+point + line = overall mean and 95% CI.
 
-The one genuinely new result is `sigma_0`: **meter-2 trials are noisier at baseline than meter-3
-trials**, regardless of condition -- consistent across nearly every individual trial, not driven
-by one outlier.
+```{r tau-by-meter-plot, fig.width=5, fig.height=3.5}
+tau_per_trial <- posterior_draws[converged == TRUE,
+  .(mean_tau = mean(tau)), by = .(subject, trial, meter, condition)]
 
-```{r sigma0-by-meter-plot}
-sigma0_per_trial <- posterior_draws[converged == TRUE,
-  .(mean_sigma0 = mean(sigma_0)), by = .(trial, meter, condition)]
+diff_row_tau <- group_comparisons[comparison == "2 - 3" & parameter == "tau"]
 
-diff_row <- group_comparisons[comparison == "2 - 3" & parameter == "sigma_0"]
-
-ggplot(sigma0_per_trial, aes(x = factor(meter), y = mean_sigma0)) +
-  geom_boxplot(width = 0.4, outlier.shape = NA, fill = "grey90") +
-  geom_jitter(aes(color = condition), width = 0.08, size = 2.5) +
-  labs(x = "meter", y = "sigma_0 (baseline noise, log-amplitude units)", color = NULL,
-       title = "Baseline tapping noise is higher in meter-2 trials",
-       subtitle = paste0("meter 2 - meter 3 = ", round(diff_row$diff_mean, 3),
-                          ", 94% credible interval [", round(diff_row$hdi_94_lo, 3), ", ",
-                          round(diff_row$hdi_94_hi, 3), "]"))
+ggplot(tau_per_trial, aes(x = factor(meter), y = mean_tau)) +
+  ggdist::stat_halfeye(adjust = 0.6, width = 0.5, .width = 0.95, point_interval = "mean_qi",
+                        justification = -0.2, point_size = 2, fill = "grey80") +
+  geom_jitter(aes(color = subject), width = 0.08, height = 0, size = 1.6, alpha = 0.85) +
+  scale_color_manual(values = SUBJECT_COLORS) +
+  labs(x = "meter", y = "tau (beats)", color = NULL,
+       title = "Switches complete later (slower) in meter-3 trials",
+       subtitle = paste0("meter 2 - meter 3 = ", round(diff_row_tau$diff_mean, 2),
+                          " beats, 94% CI [", round(diff_row_tau$hdi_94_lo, 2), ", ",
+                          round(diff_row_tau$hdi_94_hi, 2), "]"))
 ```
 
-This is unrelated to the switch itself -- `sigma_0` describes general tap-to-tap loudness
-consistency, not anything specific to *when* the meter changes. A plausible reading: a 2-beat bar
-gives the tapper less internal structure to lock onto (just strong-weak) than a 3-beat bar
-(strong-weak-weak), making steady, consistent accenting harder to sustain -- but with one
-participant this is a hypothesis worth checking with more data, not a conclusion.
+`tau` is credibly *lower* (earlier) in meter-2 trials than meter-3 -- switches complete a few beats
+faster when starting from a 2-beat bar. This survives the subject-level analysis above, so it's the
+one meter effect we'd actually stand behind. A speculative reading: a 2-beat bar (strong-weak) is a
+simpler pattern to abandon than a 3-beat one (strong-weak-weak), so committing to the new meter
+happens sooner.
 
-# Part 5: How much data would we actually need?
+## What about `sigma_0`?
 
-Part 4's comparisons came back mostly non-credible with the ~5 trials/cell we have now (meter 2/3
-x cued/spontaneous). That's ambiguous -- "no real effect" or just "not enough data"? `power_analysis.ipynb`
-simulates new datasets at the same trial-to-trial noise seen in sub02's fits to answer that; full
-method there, headline numbers below.
+The meter effect on `sigma_0` (baseline noise) looked credible in an earlier pass of this analysis,
+using a resampling method that pooled all trials as if independent -- reasonable-looking (large
+apparent sample, tight bars), but statistically thin for two separate reasons, both worth stating
+plainly rather than burying:
 
-```{r power-trials-table}
-tbl_power_trials <- power_trials[, .(
-  Parameter = parameter,
-  Effect = effect,
-  "Effect size" = paste0(vs_observed, " the observed diff"),
-  "Standardized effect (Cohen's d)" = round(cohens_d, 2),
-  "Trials/cell needed for 80% power" = n_per_cell_for_80pct_power
-)]
-knitr::kable(tbl_power_trials)
+1. **Pseudo-replication.** With only 6 subjects contributing the trials, treating each trial as an
+   independent unit lets subjects with more (or more extreme) trials dominate the estimate. Once
+   subjects are correctly treated as the unit of replication (as in the `tau` result above), the
+   meter effect on `sigma_0` is no longer credible (94% CI crosses zero).
+2. **A structural confound.** Meter-3 trials have two "unaccented" bar positions to meter-2's one.
+   Checked directly in the raw data: unaccented taps are noisier than accented ones in both meters
+   (SD ~9-11 dB vs. ~7 dB), so a meter with proportionally more unaccented positions will show
+   higher *pooled* noise even with no true difference in participants' consistency -- the model
+   fits one `sigma_0` per trial, not one per bar position, so it can't separate "meter" from
+   "proportion of unaccented beats." These are perfectly confounded by the experiment's own design
+   (2-beat bars are structurally 50/50 accented, 3-beat bars are structurally 1/3-2/3).
+
+Net: **no credible, uncounfounded evidence of a meter effect on baseline noise.** This replaces
+what an earlier, less careful pass of this analysis reported as a finding.
+
+## Does musical training predict switch behaviour?
+
+A separate participant questionnaire (`demographics/music_training.xlsx`) records whether each
+participant reports musical training. Only 5 of the 6 fitted participants have a label (`sub08`
+isn't in that file), split 3 trained / 2 untrained -- **far too few to test anything**
+(`power_analysis.ipynb`'s Monte Carlo simulation, at ~20 trials/participant, estimates
+~`r power_participants[true_r == 0.7 & trials_per_participant == 20]$n_participants_for_80pct_power`-`r power_participants[true_r == 0.5 & trials_per_participant == 20]$n_participants_for_80pct_power`
+participants are needed for this exact question, depending on effect size). Shown here purely
+descriptively, not as a finding:
+
+```{r training-plot, fig.width=6, fig.height=3}
+training <- data.table(subject = c("sub02", "sub04", "sub05", "sub06", "sub07"),
+                        trained = c("yes", "yes", "no", "yes", "no"))
+
+per_subj <- posterior_draws[converged == TRUE, .(mean_tau = mean(tau), mean_s = mean(s)),
+                             by = subject]
+per_subj <- merge(per_subj, training, by = "subject")
+
+p_tau <- ggplot(per_subj, aes(x = trained, y = mean_tau, color = subject)) +
+  stat_summary(fun = mean, geom = "point", color = "black", size = 4, shape = 18) +
+  geom_jitter(width = 0.05, size = 3) +
+  scale_color_manual(values = SUBJECT_COLORS) +
+  labs(x = "musical training", y = "mean tau (beats)", title = "Switch latency")
+p_s <- ggplot(per_subj, aes(x = trained, y = mean_s, color = subject)) +
+  stat_summary(fun = mean, geom = "point", color = "black", size = 4, shape = 18) +
+  geom_jitter(width = 0.05, size = 3) +
+  scale_color_manual(values = SUBJECT_COLORS) +
+  labs(x = "musical training", y = "mean s (transition width)", title = "Switch sharpness")
+gridExtra::grid.arrange(p_tau, p_s, ncol = 2)
+
+tbl_training <- per_subj[, .(mean_tau = round(mean(mean_tau), 2), mean_s = round(mean(mean_s), 3)), by = trained]
 ```
 
-Most effects *actually observed* so far need well more than the current ~5 trials/cell to reach
-80% power (e.g. 104 for `tau`'s meter effect), dropping fast for a bigger true effect (12 at 3x) --
-so most Part 4 non-findings are inconclusive, not evidence of no effect. `sigma_0`'s meter effect
-needed no such adjustment (already ~80% powered at n=5), which is a useful sanity check on the
-method. One new result: the **meter x condition interaction on `tau`** (d = 0.83) is bigger than
-either main effect and was never tested before -- worth a dedicated follow-up (~48 trials/cell to
-confirm).
-
-**Suggestion:** **~20 trials/cell (80/participant)** as a practical default, enough for a
-moderate-to-large effect (2-3x observed) on most parameters above; size specifically to the `tau`
-interaction row if that's the actual target.
-
-Separately: if switch "selectivity" (`-log(s)`) scales with musical training, how many
-*participants* would that take? (Needs an assumption about between-participant variance, which one
-participant can't measure -- see the notebook.)
-
-```{r power-participants-table}
-tbl_power_participants <- power_participants[, .(
-  "True correlation (r)" = true_r,
-  "Trials/participant" = trials_per_participant,
-  "Participants needed for 80% power" = n_participants_for_80pct_power
-)]
-knitr::kable(tbl_power_participants)
+```{r training-table}
+knitr::kable(tbl_training, col.names = c("Trained", "Mean tau (beats)", "Mean s"))
 ```
 
-Participant count is the real lever here, not trials/participant (which barely moves the
-requirement): a moderate effect (r = 0.5) needs roughly **30 participants**, a strong one (r = 0.7)
-**~15** -- keep sessions around the current length and prioritise recruiting more participants.
+The group *means* (black diamonds above) do point the hypothesized way -- trained participants
+switch a couple of beats earlier and somewhat more sharply than untrained ones. A pattern in the
+two panels together is worth calling out as suggestive: the two **trained** participants who
+overlap with the untrained group on one metric are coherent on *both* -- trained participants
+cluster together on `tau` and `s` simultaneously. The two **untrained** participants instead split
+apart: one is comparably fast (`tau`) but noticeably less sharp (`s`) than the trained cluster, the
+other is comparably sharp but noticeably slower. That two people can each match the trained group
+on one axis while being the outlier on the other is itself weak evidence for a real, two-dimensional
+training effect, rather than one axis just being noisy -- though with n=2 per "untrained" person,
+this is a pattern to flag for a bigger sample, not a claim. Worth being concrete about why this
+isn't more than a hint: the "no" group is just sub05 and sub07, and sub07 is the same participant
+already flagged repeatedly in this report as our lowest-signal case (worst cued-validation
+confidence, worst spontaneous-switch confidence). A 2-person group where one member is a known
+outlier on data quality, not training, can produce part of this pattern without training being the
+actual cause. Not dismissing it -- just noting that n=5 can't distinguish "training
+effect" from "sub07 is noisy" here, which is exactly why the power analysis calls for ~15-30
+participants before trusting this comparison.
 
 # Summary
 
-- Tapping timing looks noisy and undifferentiated around a switch, both in a single trial and
-  pooled across all of them -- **loudness, not timing, is where the switch signal actually lives**,
-  which is why the model is built entirely on tap loudness.
-- The switch-detection model was validated against cued trials (known instruction time) before being
-  trusted on spontaneous trials: `tau` tracks the instruction time closely (correlation 0.94) with a
-  small, consistent, always-positive lag (~2.3 beats on average) -- a sensible reaction/adoption
-  delay, not the cue time itself, which is what the model is actually built to measure. Real
-  switches also turned out to be close to instantaneous rather than gradual, once checked directly.
-- For spontaneous trials, the model both estimates *when* a switch happened and *how confident* it
-  is in that estimate -- `r sum(model_fits$confident_switch)` in 10 spontaneous trials show a
-  confident, well-identified switch.
-- A model-free check (raw accent contrast, no fitting) confirms the pattern independently: confident
-  trials show a real contrast collapse near the model's estimated switch; unclear trials show either
-  a weak starting accent or an incomplete collapse -- genuine data features, not fitting artifacts.
-- All results so far are based on a single participant; more data is needed before drawing general
-  conclusions.
-- A power analysis of the full 2x2 (meter x condition) design suggests roughly **20 trials/cell
-  (80/participant)** to properly resolve most `tau`/`s` effects at 2-3x their currently-observed
-  size, and hints at a **`tau` meter x condition interaction** worth a dedicated follow-up. Across
-  participants, roughly **30 participants** (session length largely unchanged) would be needed to
-  detect a moderate musical-training effect on switch selectivity.
+Based on 6 participants (up from 1 in the previous version of this report).
+
+- **Loudness, not timing, is where the switch signal lives** -- tapping timing looks noisy and
+  undifferentiated around a switch in every participant, and shows a consistent small anticipation
+  effect (~25-70 ms early, a known tapping-literature phenomenon) unrelated to switching, so the
+  model is built entirely on tap loudness.
+- The switch-detection model was validated against cued trials (known instruction time): weaker
+  pooled than it looked with one subject, and one participant (sub07) has almost no well-identified
+  cued trials at all -- restricted to trials the model itself is confident about (same wide-CI flag
+  used for spontaneous trials), correlation with instruction time is 0.72 and lag is consistently
+  positive (-1.7 to +22.3 beats). Real switches are close to instantaneous rather than gradual.
+- For spontaneous trials, `r sum(model_fits$confident_switch)` of `r nrow(model_fits)` trials show
+  a confident, well-identified switch, but that varies a lot by participant (2/10 to 10/10) --
+  confirmed independently by a model-free accent-contrast check with no fitting involved.
+- **One credible group difference, pooled across participants**: `tau` (switch latency) is
+  credibly faster in meter-2 trials than meter-3. A meter effect on `sigma_0` (baseline noise)
+  looked credible under a naive analysis but doesn't survive once subjects (not trials) are treated
+  as the independent unit, and is separately confounded with meter-3 having twice as many
+  unaccented bar positions -- dropped as a finding, kept in the report as a methodological note.
+  Neither `s` nor `sigma_sw` differ credibly by meter or condition.
+- A first look at musical training (n=5, 3 trained/2 untrained) shows group means in the
+  hypothesized direction, but one of only two "untrained" participants is sub07 -- already flagged
+  repeatedly as our lowest-signal case -- so this can't be told apart from a data-quality artifact
+  with this few people. The power analysis puts the real requirement at ~15-30 participants.
+
+# What works, what's next
+
+**What works:**
+
+1. The whole experiment pipeline works, end to end, across participants.
+2. `tau` estimation works and finds real (credible) differences:
+   - By meter: faster in meter 2, slower in meter 3 -- survives the subject-level, confound-checked
+     analysis, so this is the one we'd stand behind.
+   - By condition: `tau` is later in cued than spontaneous, and `sigma_0` (baseline noise) is lower
+     in cued than spontaneous -- both expected/mechanical (cued trials have a known cue to react to,
+     which structurally delays and steadies tapping) rather than new findings.
+   - `s` and `sigma_sw` show no credible difference anywhere (meter or condition).
+3. Musical training shows an effect, but it's anecdotal only (n=5).
+
+**Future work:**
+
+1. Better recording of tapping (reduce noise/dropouts seen in some participants).
+2. More trials per participant.
+3. A hierarchical model, pooling properly across trials and participants.
+4. A better measure of musical training (a proper questionnaire, not yes/no).
